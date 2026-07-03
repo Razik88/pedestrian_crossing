@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pedestrian Monitor — HUD</title>
+    <style>
+        /* ========== ГЛОБАЛЬНЫЙ СБРОС ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0f14;
+            color: #b0b8c5;
+            height: 100vh;
+            display: grid;
+            grid-template-rows: 1fr auto;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* ========== КОНТЕЙНЕР ИЗОБРАЖЕНИЯ ========== */
+        .image-container {
+            position: relative;
+            grid-row: 1;
+            background: #0d0f14;
+            overflow: hidden;
+        }
+
+        /* ========== HUD-БЛОК (статистика + экспорт) ========== */
+        .hud-block {
+            position: absolute;
+            top: 28px;
+            left: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            padding: 14px 22px 16px 18px;
+            border-radius: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.06);
+            z-index: 10;
+            pointer-events: none;
+            min-width: 180px;
+        }
+
+        .hud-stats {
+            display: flex;
+            gap: 32px;
+            pointer-events: none;
+        }
+
+        .hud-stats .stat {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .hud-stats .number {
+            font-size: 26px;
+            font-weight: 300;
+            color: #e8edf5;
+            letter-spacing: -0.5px;
+            line-height: 1;
+        }
+
+        .hud-stats .number.green { color: #6fcf97; }
+        .hud-stats .number.red { color: #f28b82; }
+
+        .hud-stats .label {
+            color: #6a7288;
+            font-weight: 400;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        /* ========== КНОПКИ ЭКСПОРТА (под статистикой) ========== */
+        .export-buttons {
+            display: flex;
+            gap: 14px;
+            pointer-events: auto;
+            margin-top: 2px;
+        }
+
+        .export-buttons a {
+            color: #8a92aa;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            padding: 6px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+            transition: 0.2s;
+            background: rgba(255, 255, 255, 0.02);
+            pointer-events: auto;
+        }
+
+        .export-buttons a:hover {
+            color: #d0d8e8;
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .export-buttons a.disabled {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        /* ========== ЗОНА ЗАГРУЗКИ ========== */
+        .drop-zone {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            cursor: pointer;
+            padding: 50px 70px;
+            border: 1px dashed rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            transition: 0.25s;
+            background: rgba(0, 0, 0, 0.15);
+            z-index: 5;
+        }
+
+        .drop-zone:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .drop-zone .icon {
+            font-size: 32px;
+            opacity: 0.4;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone .text {
+            font-size: 14px;
+            color: #8a92aa;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .drop-zone .sub {
+            font-size: 11px;
+            color: #4a5268;
+            margin-top: 6px;
+        }
+
+        .drop-zone input[type="file"] {
+            display: none;
+        }
+
+        /* ========== СРАВНЕНИЕ ДО/ПОСЛЕ ========== */
+        .comparison {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .comparison img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .comparison .before {
+            clip-path: inset(0 50% 0 0);
+        }
+
+        .comparison .after {
+            clip-path: inset(0 0 0 50%);
+        }
+
+        .slider {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 1px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(-50%);
+            cursor: col-resize;
+            pointer-events: auto;
+            z-index: 6;
+        }
+
+        .slider::before {
+            content: '◀ ▶';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 2px 10px;
+            border-radius: 3px;
+            letter-spacing: 4px;
+            font-weight: 300;
+        }
+
+        /* ========== СТАТУС (внизу по центру) ========== */
+        .status-overlay {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #5a6278;
+            z-index: 10;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px 16px;
+            border-radius: 20px;
+            backdrop-filter: blur(2px);
+        }
+
+        /* ========== ОШИБКА (в футере не нужна, выводим под статусом) ========== */
+        .error-text {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #f28b82;
+            font-size: 12px;
+            background: rgba(0,0,0,0.4);
+            padding: 4px 14px;
+            border-radius: 12px;
+            display: none;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .error-text.show {
+            display: block;
+        }
+
+        /* ========== ВСПОМОГАТЕЛЬНЫЕ ========== */
+        .hidden {
+            display: none !important;
+        }
+
+        /* ========== АДАПТИВНОСТЬ ========== */
+        @media (max-width: 700px) {
+            .hud-block {
+                top: 16px;
+                left: 16px;
+                padding: 10px 14px 12px 14px;
+                gap: 10px;
+            }
+            .hud-stats {
+                gap: 16px;
+                flex-wrap: wrap;
+            }
+            .hud-stats .number { font-size: 18px; }
+            .export-buttons a { font-size: 12px; padding: 4px 12px; }
+            .drop-zone { padding: 30px 40px; }
+            .drop-zone .text { font-size: 12px; }
+            .slider::before { font-size: 9px; padding: 2px 6px; }
+        }
+
+        @media (max-width: 480px) {
+            .hud-block {
+                top: 12px;
+                left: 12px;
+                padding: 8px 10px 10px 10px;
+                gap: 8px;
+                min-width: auto;
+            }
+            .hud-stats {
+                gap: 10px;
+            }
+            .hud-stats .number { font-size: 15px; }
+            .hud-stats .label { font-size: 8px; }
+            .export-buttons a { font-size: 10px; padding: 3px 8px; }
+            .drop-zone { padding: 20px 24px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="image-container" id="imageContainer">
+
+        <!-- HUD-блок: статистика + кнопки экспорта -->
+        <div class="hud-block" id="hudBlock" style="display:none;">
+            <div class="hud-stats" id="hudStats">
+                <div class="stat">
+                    <span class="number" id="crossCount">—</span>
+                    <span class="label">На зебре</span>
+                </div>
+                <div class="stat">
+                    <span class="number" id="totalCount">—</span>
+                    <span class="label">Всего</span>
+                </div>
+                <div class="stat">
+                    <span class="number" id="zebraStatus">—</span>
+                    <span class="label">Зебра</span>
+                </div>
+            </div>
+            <div class="export-buttons">
+                <a href="/report" download="pedestrian_report.pdf" id="pdfLink" class="disabled">PDF</a>
+                <a href="/export_excel" download="pedestrian_history.xlsx" id="excelLink" class="disabled">Excel</a>
+            </div>
+        </div>
+
+        <!-- Зона загрузки -->
+        <div class="drop-zone" id="dropZone">
+            <span class="icon">📸</span>
+            <div class="text">Нажмите или перетащите фото</div>
+            <div class="sub">JPEG · PNG</div>
+            <input type="file" id="imageInput" accept="image/*">
+        </div>
+
+        <!-- Сравнение ДО/ПОСЛЕ -->
+        <div class="comparison hidden" id="comparison">
+            <img class="before" id="beforeImg" src="" alt="Оригинал">
+            <img class="after" id="afterImg" src="" alt="Результат">
+            <div class="slider" id="slider"></div>
+        </div>
+
+        <!-- Статус (внизу) -->
+        <div class="status-overlay" id="statusOverlay">Ожидание загрузки</div>
+
+        <!-- Ошибка -->
+        <div class="error-text" id="errorText"></div>
+    </div>
+
+    <script>
+        (function() {
+            const fileInput = document.getElementById('imageInput');
+            const dropZone = document.getElementById('dropZone');
+            const statusOverlay = document.getElementById('statusOverlay');
+            const errorText = document.getElementById('errorText');
+            const hudBlock = document.getElementById('hudBlock');
+            const comparison = document.getElementById('comparison');
+            const beforeImg = document.getElementById('beforeImg');
+            const afterImg = document.getElementById('afterImg');
+            const slider = document.getElementById('slider');
+            const pdfLink = document.getElementById('pdfLink');
+            const excelLink = document.getElementById('excelLink');
+
+            const crossCount = document.getElementById('crossCount');
+            const totalCount = document.getElementById('totalCount');
+            const zebraStatus = document.getElementById('zebraStatus');
+
+            // ------ ЗАГРУЗКА ФАЙЛА ------
+            function loadFile(file) {
+                const formData = new FormData();
+                formData.append('image', file);
+
+                errorText.classList.remove('show');
+                hudBlock.style.display = 'none';
+                comparison.classList.add('hidden');
+                dropZone.classList.remove('hidden');
+                statusOverlay.innerHTML = '<span style="opacity:0.6;">⏳ Обработка...</span>';
+                pdfLink.classList.add('disabled');
+                excelLink.classList.add('disabled');
+
+                fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Ошибка сервера'); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    // Статистика
+                    crossCount.textContent = data.count;
+                    totalCount.textContent = data.total_detected || '—';
+                    const found = data.zebra_found;
+                    zebraStatus.textContent = found ? '✅' : '✖';
+                    zebraStatus.className = 'number ' + (found ? 'green' : 'red');
+
+                    // Изображения
+                    beforeImg.src = data.original_url + '?' + Date.now();
+                    afterImg.src = data.image_url + '?' + Date.now();
+
+                    // Показываем
+                    hudBlock.style.display = 'flex';
+                    comparison.classList.remove('hidden');
+                    dropZone.classList.add('hidden');
+                    statusOverlay.textContent = '✅ Готово';
+                    pdfLink.classList.remove('disabled');
+                    excelLink.classList.remove('disabled');
+
+                })
+                .catch(err => {
+                    errorText.textContent = '⚠ ' + err.message;
+                    errorText.classList.add('show');
+                    statusOverlay.textContent = '❌ Ошибка';
+                    hudBlock.style.display = 'none';
+                    comparison.classList.add('hidden');
+                    dropZone.classList.remove('hidden');
+                })
+                .finally(() => {
+                    fileInput.value = '';
+                });
+            }
+
+            // ------ СОБЫТИЯ ------
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            fileInput.addEventListener('change', function() {
+                if (this.files && this.files[0]) {
+                    loadFile(this.files[0]);
+                }
+            });
+
+            // Drag & Drop
+            let dragCounter = 0;
+            document.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dragCounter++;
+                dropZone.style.borderColor = 'rgba(255,255,255,0.3)';
+            });
+
+            document.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dragCounter--;
+                if (dragCounter === 0) {
+                    dropZone.style.borderColor = 'rgba(255,255,255,0.08)';
+                }
+            });
+
+            document.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragCounter = 0;
+                dropZone.style.borderColor = 'rgba(255,255,255,0.08)';
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    loadFile(files[0]);
+                }
+            });
+
+            // ------ ПОЛЗУНОК (вертикальный) ------
+            let isDragging = false;
+            let sliderPos = 50;
+
+            function updateSlider(pos) {
+                const rect = document.getElementById('imageContainer').getBoundingClientRect();
+                const x = Math.min(Math.max(pos, 0), rect.width);
+                const percent = (x / rect.width) * 100;
+                sliderPos = Math.min(Math.max(percent, 5), 95);
+                slider.style.left = sliderPos + '%';
+                beforeImg.style.clipPath = `inset(0 ${100 - sliderPos}% 0 0)`;
+                afterImg.style.clipPath = `inset(0 0 0 ${sliderPos}%)`;
+            }
+
+            slider.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const rect = document.getElementById('imageContainer').getBoundingClientRect();
+                    updateSlider(e.clientX - rect.left);
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            // Touch support
+            slider.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                e.preventDefault();
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                if (isDragging) {
+                    const rect = document.getElementById('imageContainer').getBoundingClientRect();
+                    const touch = e.touches[0];
+                    updateSlider(touch.clientX - rect.left);
+                }
+            });
+
+            document.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+
+            // Инициализация ползунка
+            setTimeout(() => {
+                updateSlider(window.innerWidth / 2);
+            }, 100);
+
+            window.addEventListener('resize', () => {
+                updateSlider((sliderPos / 100) * window.innerWidth);
+            });
+        })();
+    </script>
+
+</body>
+</html>
